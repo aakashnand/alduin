@@ -8,7 +8,7 @@ import anthropic
 import dotenv
 from rich.console import Console
 import rich.pretty
-from alduin import llm, theme, ui, system_prompt
+from alduin import llm, theme, ui, system_prompt, schema_converter, tool
 
 
 def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
@@ -20,6 +20,8 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
     """
 
     conversation: list[dict[str, Any]] = []
+
+    active_tools = [tool.read_file]
 
     while True:
         try:
@@ -43,7 +45,7 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
             client=client,
             system_prompt=system_prompt.get(),
             messages=conversation,
-            tool_schemas=[],
+            tool_schemas=schema_converter.generate_tool_schema(active_tools),
         )
         # Append previous conversation to the list
         conversation.append({'role': 'assistant', 'content': llm_response.content})
@@ -56,12 +58,18 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
         #     "Even the Firstborn of Akatosh has limits. Very few. But they exist."
         # )
         for block in llm_response.content:
-            ui.print_assistant_reply(
-                console=console,
-                text=block.text,
-                input_tokens=llm_response.usage.input_tokens,
-                output_tokens=llm_response.usage.output_tokens,
-            )
+            # check if response block wants to use tool
+            if block.type == 'text':
+                ui.print_assistant_reply(
+                    console=console,
+                    text=block.text,
+                    input_tokens=llm_response.usage.input_tokens,
+                    output_tokens=llm_response.usage.output_tokens,
+                )
+            elif block.type == 'tool_use':
+                print(
+                    f'tool use requested for tool {block.name} with args {block.input}'
+                )
 
 
 def main() -> None:
