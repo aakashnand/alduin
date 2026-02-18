@@ -1,10 +1,7 @@
 """Alduin - A minimal CLI coding agent."""
 
-from operator import call
 import os
 from typing import Any
-from unittest import result
-from urllib import response
 
 import anthropic
 import dotenv
@@ -28,9 +25,9 @@ def execute_tool(
         )
     ui.print_tool_request(console=console, name=name_of_the_tool_to_execute, args=args)
     try:
-        response = tool_fn(**args)
+        result = tool_fn(**args)
         ui.print_tool_result(
-            console=console, name=name_of_the_tool_to_execute, result=response
+            console=console, name=name_of_the_tool_to_execute, result=result
         )
         return result
     except Exception as e:
@@ -39,7 +36,7 @@ def execute_tool(
             console=console, name=name_of_the_tool_to_execute, error=error_msg
         )
 
-    return response
+        return error_msg
 
 
 def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
@@ -52,7 +49,7 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
 
     conversation: list[dict[str, Any]] = []
 
-    active_tools = [tool.read_file]
+    active_tools = [tool.read_file, tool.list_files]
 
     tools_lookup = {t.__name__: t for t in active_tools}
 
@@ -72,43 +69,63 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
         ui.clear_previous_line()
         ui.print_user_message(console, user_input)
 
-        # import the call method from llm module
-        llm_response = llm.call(
-            console=console,
-            client=client,
-            system_prompt=system_prompt.get(),
-            messages=conversation,
-            tool_schemas=schema_converter.generate_tool_schema(active_tools),
-        )
-        # Append previous conversation to the list
-        conversation.append({'role': 'assistant', 'content': llm_response.content})
+        # Start sub agent loop break when there is no call for tools
+        while True:
+            # import the call method from llm module
+            llm_response = llm.call(
+                console=console,
+                client=client,
+                system_prompt=system_prompt.get(),
+                messages=conversation,
+                tool_schemas=schema_converter.generate_tool_schema(active_tools),
+            )
+            # Append previous conversation to the list
+            conversation.append({'role': 'assistant', 'content': llm_response.content})
 
-        # display llm response
-        rich.pretty.pprint(llm_response)
+            tool_results = []
 
-        # assistant_reply = (
-        #     "Krosis. That knowledge cannot be known to me. "
-        #     "Even the Firstborn of Akatosh has limits. Very few. But they exist."
-        # )
-        for block in llm_response.content:
-            # check if response block wants to use tool
-            if block.type == 'text':
-                ui.print_assistant_reply(
-                    console=console,
-                    text=block.text,
-                    input_tokens=llm_response.usage.input_tokens,
-                    output_tokens=llm_response.usage.output_tokens,
-                )
-            elif block.type == 'tool_use':
-                execute_tool(
-                    name_of_the_tool_to_execute=block.name,
-                    tools_lookup_table=tools_lookup,
-                    args=block.input,
-                    console=console,
-                )
-                # print(
-                #     f'tool use requested for tool {block.name} with args {block.input}'
-                # )
+            # display llm response
+            rich.pretty.pprint(llm_response)
+
+            # assistant_reply = (
+            #     "Krosis. That knowledge cannot be known to me. "
+            #     "Even the Firstborn of Akatosh has limits. Very few. But they exist."
+            # )
+            for block in llm_response.content:
+                # check if response block wants to use tool
+                if block.type == 'text':
+                    ui.print_assistant_reply(
+                        console=console,
+                        text=block.text,
+                        input_tokens=llm_response.usage.input_tokens,
+                        output_tokens=llm_response.usage.output_tokens,
+                    )
+                elif block.type == 'tool_use':
+                    result = execute_tool(
+                        name_of_the_tool_to_execute=block.name,
+                        tools_lookup_table=tools_lookup,
+                        args=block.input,
+                        console=console,
+                    )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        }
+                    )
+                    # print(
+                    #     f'tool use requested for tool {block.name} with args {block.input}'
+                    # )
+            # break when there are no more tool to call
+            if not tool_results:
+                break
+            conversation.append(
+                {
+                    "role": "user",
+                    "content": tool_results,
+                }
+            )
 
 
 def main() -> None:
