@@ -240,4 +240,3 @@ def confirm(console: Console, message: str) -> bool:
     except (KeyboardInterrupt, EOFError):
         return False
     return answer in ("y", "yes")
-
