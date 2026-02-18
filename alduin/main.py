@@ -1,13 +1,14 @@
 """Alduin - A minimal CLI coding agent."""
 
+from operator import call
 import os
 from typing import Any
 
 import anthropic
 import dotenv
 from rich.console import Console
-
-from alduin import theme, ui
+import rich.pretty
+from alduin import llm, theme, ui, system_prompt
 
 
 def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
@@ -36,11 +37,31 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
         ui.clear_previous_line()
         ui.print_user_message(console, user_input)
 
-        assistant_reply = (
-            "Krosis. That knowledge cannot be known to me. "
-            "Even the Firstborn of Akatosh has limits. Very few. But they exist."
+        # import the call method from llm module
+        llm_response = llm.call(
+            console=console,
+            client=client,
+            system_prompt=system_prompt.get(),
+            messages=conversation,
+            tool_schemas=[],
         )
-        ui.print_assistant_reply(console=console, text=assistant_reply, input_tokens=0, output_tokens=0)
+        # Append previous conversation to the list
+        conversation.append({'role': 'assistant', 'content': llm_response.content})
+
+        # display llm response
+        rich.pretty.pprint(llm_response)
+
+        # assistant_reply = (
+        #     "Krosis. That knowledge cannot be known to me. "
+        #     "Even the Firstborn of Akatosh has limits. Very few. But they exist."
+        # )
+        for block in llm_response.content:
+            ui.print_assistant_reply(
+                console=console,
+                text=block.text,
+                input_tokens=llm_response.usage.input_tokens,
+                output_tokens=llm_response.usage.output_tokens,
+            )
 
 
 def main() -> None:
