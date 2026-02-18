@@ -3,12 +3,43 @@
 from operator import call
 import os
 from typing import Any
+from unittest import result
+from urllib import response
 
 import anthropic
 import dotenv
 from rich.console import Console
 import rich.pretty
 from alduin import llm, theme, ui, system_prompt, schema_converter, tool
+
+
+def execute_tool(
+    name_of_the_tool_to_execute: str,
+    tools_lookup_table: dict[str, Any],
+    args: Any,
+    console: Console,
+) -> str:
+    # get the tool function to execute
+    tool_fn = tools_lookup_table.get(name_of_the_tool_to_execute)
+    if not tool_fn:
+        error_msg = f"Error: Requested tool do not exists {name_of_the_tool_to_execute}"
+        ui.print_tool_error(
+            console=console, name=name_of_the_tool_to_execute, error=error_msg
+        )
+    ui.print_tool_request(console=console, name=name_of_the_tool_to_execute, args=args)
+    try:
+        response = tool_fn(**args)
+        ui.print_tool_result(
+            console=console, name=name_of_the_tool_to_execute, result=response
+        )
+        return result
+    except Exception as e:
+        error_msg = f'Error: Calling tool {name_of_the_tool_to_execute}\n{e}'
+        ui.print_tool_error(
+            console=console, name=name_of_the_tool_to_execute, error=error_msg
+        )
+
+    return response
 
 
 def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
@@ -22,6 +53,8 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
     conversation: list[dict[str, Any]] = []
 
     active_tools = [tool.read_file]
+
+    tools_lookup = {t.__name__: t for t in active_tools}
 
     while True:
         try:
@@ -67,9 +100,15 @@ def agent_loop(client: anthropic.Anthropic, console: Console) -> None:
                     output_tokens=llm_response.usage.output_tokens,
                 )
             elif block.type == 'tool_use':
-                print(
-                    f'tool use requested for tool {block.name} with args {block.input}'
+                execute_tool(
+                    name_of_the_tool_to_execute=block.name,
+                    tools_lookup_table=tools_lookup,
+                    args=block.input,
+                    console=console,
                 )
+                # print(
+                #     f'tool use requested for tool {block.name} with args {block.input}'
+                # )
 
 
 def main() -> None:
